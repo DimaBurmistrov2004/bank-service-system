@@ -13,135 +13,127 @@ public class AnalyticsService {
 
     public BigDecimal getMonthlySpendingByCategory(BankAccount bankAccount, String category) {
 
+        BigDecimal totalSum = BigDecimal.ZERO;
+
         // Проверка входных данных на существование
         if (bankAccount == null || category.isEmpty()) {
-            return BigDecimal.ZERO;
+            return totalSum;
         }
 
         LocalDateTime oneMonthAgo = LocalDateTime.now().minusMonths(1);
-        BigDecimal amount = BigDecimal.ZERO;
 
         // Проверка 3 условий: Транзакция типа PAYMENT, ищем нужную категорию в транзакции,
         // транзакции младше одного месяца
         for (Transaction transaction : bankAccount.getTransactions()) {
-            if (transaction.getType() == TransactionType.PAYMENT
+            if (TransactionType.PAYMENT.equals(transaction.getType())
                     && transaction.getCategory().equals(category)
                     && !transaction.getCreatedDate().isBefore(oneMonthAgo)) {
-                amount = amount.add(transaction.getValue());
+                totalSum = totalSum.add(transaction.getValue());
             }
         }
-        return amount;
+        return totalSum;
     }
 
     public Map<String, BigDecimal> getMonthlySpendingByCategories(User user, Set<String> categories) {
 
+        Map<String, BigDecimal> resultMap = new HashMap<>();
+
         // Проверка входных данных на существование
         if (user == null || categories.isEmpty()) {
-            return Collections.emptyMap();
+            return resultMap;
         }
 
         LocalDateTime oneMonthAgo = LocalDateTime.now().minusMonths(1);
-        Map<String, BigDecimal> monthlySpendingByCategories = new HashMap<>();
 
         for (BankAccount account : user.getBankAccounts()) {
             for (Transaction transaction : account.getTransactions()) {
 
                 // Проверка 3 условий: Транзакция типа PAYMENT, ищем нужную категорию в транзакции,
                 // транзакции младше одного месяца
-                if (transaction.getType() == TransactionType.PAYMENT
+                if (TransactionType.PAYMENT.equals(transaction.getType())
                         && categories.contains(transaction.getCategory())
                         && !transaction.getCreatedDate().isBefore(oneMonthAgo)) {
-                    BigDecimal currentSum = monthlySpendingByCategories.
-                            getOrDefault(transaction.getCategory(), BigDecimal.ZERO);
-                    BigDecimal newSum = currentSum.add(transaction.getValue());
-                    monthlySpendingByCategories.put(transaction.getCategory(), newSum);
+                    resultMap.merge(transaction.getCategory(), transaction.getValue(), BigDecimal::add);
                 }
             }
         }
 
-        return monthlySpendingByCategories;
+        return resultMap;
     }
 
     public LinkedHashMap<String, List<Transaction>> getTransactionHistorySortedByAmount(User user) {
 
+        LinkedHashMap<String, List<Transaction>> resultMap = new LinkedHashMap<>();
+
         // Проверка входных данных на существование
         if (user == null) {
-            return new LinkedHashMap<>();
+            return resultMap;
         }
 
-        LinkedHashMap<String, List<Transaction>> TransactionHistorySorted = new LinkedHashMap<>();
+        List<Transaction> transactions = new ArrayList<>();
 
         for (BankAccount account : user.getBankAccounts()) {
             for (Transaction transaction : account.getTransactions()) {
-
-                // Проверка, что транзакция типа PAYMENT
-                if (transaction.getType() == TransactionType.PAYMENT) {
-                    List<Transaction> transactions = new ArrayList<>();
+                if (TransactionType.PAYMENT.equals(transaction.getType())) {
                     transactions.add(transaction);
-                    transactions.sort(new Comparator<Transaction>() {
-                        @Override
-                        public int compare(Transaction o1, Transaction o2) {
-                            return o1.getValue().compareTo(o2.getValue());
-                        }
-                    });
-                    TransactionHistorySorted.put(transaction.getCategory(), transactions);
                 }
             }
         }
+        transactions.sort(Comparator.comparing(Transaction::getValue));
 
-        return TransactionHistorySorted;
+        for (Transaction transaction : transactions) {
+            resultMap.computeIfAbsent(transaction.getCategory(), n -> new ArrayList<>()).add(transaction);
+        }
+
+        return null;
     }
 
     public List<Transaction> getLastNTransaction(User user, int n) {
 
-        // Проверка входных данных на существование
-        if (user == null) {
-            return new ArrayList<>();
-        }
-
         List<Transaction> lastNTransaction = new ArrayList<>();
 
-        for (BankAccount account : user.getBankAccounts()) {
-            for (Transaction transaction : account.getTransactions()) {
-                if (transaction != null) {
-                    lastNTransaction.add((transaction));
-                }
-            }
+        // Проверка входных данных на существование
+        if (user == null) {
+            return lastNTransaction;
         }
 
-        lastNTransaction.sort(new Comparator<Transaction>() {
-            @Override
-            public int compare(Transaction o1, Transaction o2) {
-                return o2.getCreatedDate().compareTo(o1.getCreatedDate());
-            }
-        });
+        List<Transaction> transactions = new ArrayList<>();
+        for (BankAccount account : user.getBankAccounts()) {
+            transactions.addAll(account.getTransactions());
+        }
 
-        return lastNTransaction.subList(0, n);
+        transactions.sort(Comparator.comparing(Transaction::getCreatedDate));
+
+        for (int i = 0; i < Math.min(n, transactions.size()); i++) {
+            lastNTransaction.add(transactions.get(i));
+        }
+
+        return lastNTransaction;
     }
 
     public PriorityQueue<Transaction> getTopNLargestTransactions(User user, int n) {
 
+        PriorityQueue<Transaction> topNLargestTransactions =
+                new PriorityQueue<>(Comparator.comparing(Transaction::getValue));
+
         // Проверка входных данных на существование
         if (user == null) {
-            return new PriorityQueue<>();
+            return topNLargestTransactions;
         }
-
-        PriorityQueue<Transaction> topNLargestTransactions = new PriorityQueue<>();
 
         for (BankAccount account : user.getBankAccounts()) {
             for (Transaction transaction : account.getTransactions()) {
-                if (transaction == null) {
-                    return new PriorityQueue<>();
-                }
-                if (transaction.getType() == TransactionType.PAYMENT) {
-                    topNLargestTransactions.add(transaction);
-
-                    if (topNLargestTransactions.size() > n) {
-                        topNLargestTransactions.poll();
+                    if (TransactionType.PAYMENT.equals(transaction.getType())) {
+                        if (topNLargestTransactions.size() < n) {
+                            topNLargestTransactions.offer(transaction);
+                        } else if (topNLargestTransactions.peek() != null
+                                && topNLargestTransactions.peek().getValue().compareTo(transaction.getValue()) < 0) {
+                            topNLargestTransactions.poll();
+                            topNLargestTransactions.offer(transaction);
+                        }
                     }
                 }
             }
-        }
 
         return topNLargestTransactions;
     }
